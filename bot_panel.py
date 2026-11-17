@@ -11,6 +11,18 @@ bot = telebot.TeleBot(TOKEN)
 OTP_CHANNEL_ID = 1004381508455 
 ADMIN_CONTACT = "@sakib43900"
 
+# 🌐 জেনেক্স (Genex) এপিআই কনফিগারেশন
+GENEX_API_URL = "https://api.zenexnetwork.com/v1/getnum"
+GENEX_API_KEY = "ZNX_Q4JF0FKQIDHBTUOL36JU3EKI"
+
+# 🌍 ফেসবুকের জন্য রানিং কান্ট্রি লিস্ট (পতাকাসহ)
+FACEBOOK_COUNTRIES = {
+    "fb_italy": {"name": "🇮🇹 Italy (Facebook)", "service_code": "facebook_italy", "traffic": "98% (High Speed)"},
+    "fb_usa": {"name": "🇺🇸 USA (Facebook)", "service_code": "facebook_usa", "traffic": "95% (Stable)"},
+    "fb_uk": {"name": "🇬🇧 UK (Facebook)", "service_code": "facebook_uk", "traffic": "92% (Good)"},
+    "fb_canada": {"name": "🇨🇦 Canada (Facebook)", "service_code": "facebook_canada", "traffic": "96% (Fast)"}
+}
+
 # 🗄️ ডাটাবেজ ইনিশিয়ালাইজেশন (SQLite)
 def init_db():
     conn = sqlite3.connect('spectre_bot.db')
@@ -28,7 +40,6 @@ def init_db():
 
 init_db()
 
-# হেল্পার ফাংশন: ইউজার ডাটা চেক বা তৈরি করা
 def get_or_create_user(user_id, full_name):
     conn = sqlite3.connect('spectre_bot.db')
     cursor = conn.cursor()
@@ -45,21 +56,38 @@ def get_or_create_user(user_id, full_name):
     conn.close()
     return balance, total_otps
 
-# 🌐 ডামি বা এপিআই বেজড ডাটা (এখানে জেনেক্স এপিআই কল যুক্ত করা যাবে)
-DATABASE = {
-    "italy_v7": {
-        "country_name": "🇮🇹 Italy V7",
-        "numbers": ["+393241843903", "+393241526521", "+393241325282"],
-        "traffic": "High Speed (98% Success)",
-        "today_otps": "142 OTPs Received Today"
-    },
-    "usa_v1": {
-        "country_name": "🇺🇸 USA V1 (New)",
-        "numbers": ["+14155552671", "+12025550143"],
-        "traffic": "Stable (95% Success)",
-        "today_otps": "98 OTPs Received Today"
-    }
-}
+# ইউজারের সফল ওটিপি কাউন্ট বাড়ানোর ফাংশন
+def increment_user_otp(user_id):
+    conn = sqlite3.connect('spectre_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET total_otps = total_otps + 1 WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+# 📱 জেনেক্স এপিআই থেকে ফেসবুকের নির্দিষ্ট কান্ট্রি অনুযায়ী লাইভ নাম্বার আনার ফাংশন
+def fetch_number_from_genex(service_code):
+    try:
+        headers = {
+            "mapikey": GENEX_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "service": service_code
+        }
+        
+        response = requests.post(GENEX_API_URL, headers=headers, json=payload, timeout=10)
+        data = response.json()
+        
+        if "number" in data:
+            return data.get("number")
+        elif "data" in data and "number" in data["data"]:
+            return data["data"]["number"]
+        else:
+            return None 
+            
+    except Exception as e:
+        print(f"Genex API Error: {e}")
+        return None
 
 # 🚀 /start কমান্ড হ্যান্ডলার
 @bot.message_handler(commands=['start'])
@@ -79,11 +107,11 @@ def send_welcome(message):
     )
     
     welcome_text = (
-        f"⚡ **WELCOME TO SPECTRE SMS PANEL** ⚡\n"
+        f"⚡ **WELCOME TO SPECTRE FACEBOOK SMS PANEL** ⚡\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👋 Hello, **{user.first_name}**!\n\n"
-        f"🚀 Welcome to your ultimate virtual OTP solution. Get your instant numbers and OTPs safely and securely.\n\n"
-        f"👇 Select an option from the control panel below to begin:"
+        f"🚀 Exclusive automated platform for **Facebook OTP & Number verification**. Get instant numbers securely.\n\n"
+        f"👇 Select an option from the control panel below:"
     )
     
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
@@ -97,16 +125,17 @@ def handle_menu(message):
     
     if text == "📱 GET NUMBER":
         markup = types.InlineKeyboardMarkup(row_width=1)
-        for key, data in DATABASE.items():
-            markup.add(types.InlineKeyboardButton(f"{data['country_name']} -> ({len(data['numbers'])} Numbers Available)", callback_data=f"country_{key}"))
+        # ফেসবুকের কান্ট্রিগুলো পতাকাসহ ইনলাইন বাটনে যোগ করা
+        for key, data in FACEBOOK_COUNTRIES.items():
+            markup.add(types.InlineKeyboardButton(f"{data['name']} (Traffic: {data['traffic']})", callback_data=f"fb_country_{key}"))
         
-        bot.send_message(message.chat.id, "🌐 **CHOOSE YOUR TARGET COUNTRY:**\nSelect a country below to assign a live virtual number:", parse_mode="Markdown", reply_markup=markup)
+        bot.send_message(message.chat.id, "📘 **FACEBOOK TARGET COUNTRY SELECTION:**\nSelect your desired country below to fetch a live Facebook verification number:", parse_mode="Markdown", reply_markup=markup)
         
     elif text == "📊 LIVE TRAFFIC":
-        traffic_msg = "📊 **SPECTRE LIVE TRAFFIC MONITOR** 📊\n\n"
-        for key, data in DATABASE.items():
-            traffic_msg += f"• {data['country_name']}: `{data['traffic']}`\n"
-        traffic_msg += "\n⚡ *All server gates are actively forwarding messages.*"
+        traffic_msg = "📊 **FACEBOOK LIVE TRAFFIC MONITOR** 📊\n\n"
+        for key, data in FACEBOOK_COUNTRIES.items():
+            traffic_msg += f"• {data['name']}: `Success Rate {data['traffic']}`\n"
+        traffic_msg += "\n⚡ *Genex Facebook gates are running at high velocity.*"
         bot.send_message(message.chat.id, traffic_msg, parse_mode="Markdown")
         
     elif text == "👤 STATUS":
@@ -114,8 +143,8 @@ def handle_menu(message):
             f"👤 **USER ACCOUNT STATUS**\n\n"
             f"• Full Name: {user.first_name}\n"
             f"• Telegram ID: `{user.id}`\n"
-            f"• Account Tier: `VIP Member` 🌟\n"
-            f"• Security Status: `Encrypted & Active`"
+            f"• Total Received OTPs: `{total_otps}` 📥\n"
+            f"• Account Tier: `VIP Facebook Panel` 🌟"
         )
         bot.send_message(message.chat.id, status_msg, parse_mode="Markdown")
         
@@ -123,35 +152,43 @@ def handle_menu(message):
         balance_msg = (
             f"💰 **WALLET & BALANCE**\n\n"
             f"• Current Balance: `{balance} BDT`\n"
-            f"• Total Used: `{total_otps} OTPs`\n\n"
+            f"• Total OTPs Processed: `{total_otps}`\n\n"
             f"💳 *To add balance or top-up, contact administration.*"
         )
         bot.send_message(message.chat.id, balance_msg, parse_mode="Markdown")
         
     elif text == "💳 WITHDRAW (Min 50৳)":
         if balance >= 50:
+            withdraw_markup = types.InlineKeyboardMarkup(row_width=2)
+            withdraw_markup.add(
+                types.InlineKeyboardButton("💸 Bkash", callback_data="withdraw_bkash"),
+                types.InlineKeyboardButton("💸 Nagad", callback_data="withdraw_nagad"),
+                types.InlineKeyboardButton("💸 Rocket", callback_data="withdraw_rocket"),
+                types.InlineKeyboardButton("💎 Binance", callback_data="withdraw_binance")
+            )
             withdraw_msg = (
-                f"✅ **WITHDRAWAL REQUEST INITIATED**\n\n"
+                f"✅ **WITHDRAWAL GATEWAY**\n\n"
                 f"• Available Balance: `{balance} BDT`\n"
                 f"• Minimum Limit: `50 BDT`\n\n"
-                f"📌 *Please contact admin {ADMIN_CONTACT} with your Telegram ID (`{user.id}`) to cash out instantly.*"
+                f"👇 **Select your preferred payout method:**"
             )
+            bot.send_message(message.chat.id, withdraw_msg, parse_mode="Markdown", reply_markup=withdraw_markup)
         else:
             withdraw_msg = (
                 f"⚠️ **INSUFFICIENT BALANCE**\n\n"
                 f"• Current Balance: `{balance} BDT`\n"
                 f"• Required Minimum: `50 BDT`\n\n"
-                f"❌ *Your balance is below 50 BDT. Earn or top-up more to withdraw.*"
+                f"❌ *Your balance is below 50 BDT.*"
             )
-        bot.send_message(message.chat.id, withdraw_msg, parse_mode="Markdown")
+            bot.send_message(message.chat.id, withdraw_msg, parse_mode="Markdown")
         
     elif text == "🏆 TODAY TOP":
-        top_msg = "🏆 **TODAY'S TOP PERFORMING SERVICES** 🏆\n\n"
-        count = 1
-        for key, data in DATABASE.items():
-            top_msg += f"{count}. **{data['country_name']}** -> {data['today_otps']}\n"
-            count += 1
-        top_msg += "\n🔥 *Highest success rate for verifications.*"
+        top_msg = (
+            "🏆 **TODAY'S TOP FACEBOOK COUNTRIES** 🏆\n\n"
+            "1. 🇮🇹 **Italy (Facebook)** -> `98% Success (High Traffic)`\n"
+            "2. 🇨🇦 **Canada (Facebook)** -> `96% Success (Fast Gateway)`\n\n"
+            "🔥 *Optimized for seamless Facebook verifications.*"
+        )
         bot.send_message(message.chat.id, top_msg, parse_mode="Markdown")
         
     elif text == "💬 SUPPORT":
@@ -168,45 +205,71 @@ def handle_menu(message):
     else:
         bot.send_message(message.chat.id, "⚠️ Please use the official control panel buttons below.")
 
-# 📱 ইনলাইন বাটন হ্যান্ডলার ও ওটিপি ফরওয়ার্ডিং সিস্টেম
+# 📱 ইনলাইন বাটন হ্যান্ডলার (ফেসবুক কান্ট্রি ও উইথড্র)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    if call.data.startswith("country_"):
-        c_key = call.data.replace("country_", "")
-        if c_key in DATABASE:
-            c_data = DATABASE[c_key]
-            assigned_number = c_data["numbers"][0] if c_data["numbers"] else "No Number Available"
-            user_id = call.from_user.id
+    user_id = call.from_user.id
+    
+    if call.data.startswith("fb_country_"):
+        c_key = call.data.replace("fb_country_", "")
+        if c_key in FACEBOOK_COUNTRIES:
+            c_info = FACEBOOK_COUNTRIES[c_key]
+            bot.answer_callback_query(call.id, f"Fetching {c_info['name']} number...")
             
-            bot.answer_callback_query(call.id, f"Assigned from {c_data['country_name']}!")
+            # জেনেক্স এপিআই থেকে ফেসবুকের নির্দিষ্ট কান্ট্রি কোড দিয়ে নাম্বার আনা
+            assigned_number = fetch_number_from_genex(c_info["service_code"])
             
-            response_msg = (
-                f"⏳ **WAITING FOR OTP...**\n\n"
-                f"🌍 **Service:** {c_data['country_name']}\n"
-                f"📱 **Assigned Number:** `{assigned_number}`\n\n"
-                f"📌 *Status:* Ready to receive incoming messages. OTP codes will appear here automatically."
-            )
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔄 Change Number", callback_data=f"country_{c_key}"))
-            markup.add(types.InlineKeyboardButton("🔙 Back to Country List", callback_data="back_menu"))
-            
-            bot.edit_message_text(response_msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-            trigger_otp_listener(assigned_number, c_data['country_name'], user_id)
-            
-    elif call.data == "back_menu":
+            if assigned_number:
+                response_msg = (
+                    f"⏳ **WAITING FOR FACEBOOK OTP...**\n\n"
+                    f"🌍 **Gateway:** {c_info['name']}\n"
+                    f"📱 **Assigned Number:** `{assigned_number}`\n\n"
+                    f"📌 *Status:* Ready. Send Facebook verification code to this number. OTP will appear here automatically."
+                )
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔄 Get Another Number", callback_data=f"fb_country_{c_key}"))
+                markup.add(types.InlineKeyboardButton("🔙 Back to Country List", callback_data="back_fb_menu"))
+                
+                bot.edit_message_text(response_msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+                
+                # ইউজারের সফল ওটিপি কাউন্ট এবং চ্যানেলে লগ পাঠানোর ফাংশন কল
+                increment_user_otp(user_id)
+                trigger_otp_listener(assigned_number, c_info['name'], user_id)
+            else:
+                no_num_msg = (
+                    f"⚠️ **NO NUMBER AVAILABLE**\n\n"
+                    f"❌ Currently, no stock is available for `{c_info['name']}` right now.\n"
+                    f"🔄 *Please try another country or check back soon.*"
+                )
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 Back to Country List", callback_data="back_fb_menu"))
+                bot.edit_message_text(no_num_msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+
+    elif call.data == "back_fb_menu":
         markup = types.InlineKeyboardMarkup(row_width=1)
-        for key, data in DATABASE.items():
-            markup.add(types.InlineKeyboardButton(f"{data['country_name']} -> ({len(data['numbers'])} Numbers Available)", callback_data=f"country_{key}"))
-        bot.edit_message_text("🌐 **CHOOSE YOUR TARGET COUNTRY:**", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+        for key, data in FACEBOOK_COUNTRIES.items():
+            markup.add(types.InlineKeyboardButton(f"{data['name']} (Traffic: {data['traffic']})", callback_data=f"fb_country_{key}"))
+        bot.edit_message_text("📘 **FACEBOOK TARGET COUNTRY SELECTION:**", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+
+    elif call.data.startswith("withdraw_"):
+        method = call.data.replace("withdraw_", "").upper()
+        bot.answer_callback_query(call.id, f"Selected {method} for payout!")
+        
+        payout_text = (
+            f"📥 **{method} WITHDRAWAL PENDING**\n\n"
+            f"• Payout Method: `{method}`\n"
+            f"• Minimum Limit: `50 BDT`\n\n"
+            f"📌 *To complete your payout, please message admin {ADMIN_CONTACT} with your Telegram ID (`{user_id}`) and your {method} Account Number.*"
+        )
+        bot.send_message(call.message.chat.id, payout_text, parse_mode="Markdown")
 
 def trigger_otp_listener(phone, service, user_id):
     log_text = (
-        f"🔔 **NEW NUMBER ASSIGNED & LISTENING**\n\n"
+        f"🔔 **NEW FACEBOOK NUMBER ASSIGNED & LISTENING**\n\n"
         f"📱 **Number:** `{phone}`\n"
         f"🌍 **Service:** {service}\n"
         f"👤 **Target User ID:** `{user_id}`\n\n"
-        f"⏳ *Waiting for incoming SMS/OTP from gateway...*"
+        f"⏳ *Waiting for incoming Facebook SMS/OTP...*"
     )
     try:
         bot.send_message(OTP_CHANNEL_ID, log_text, parse_mode="Markdown")
@@ -215,5 +278,5 @@ def trigger_otp_listener(phone, service, user_id):
 
 # বট রান করার লুপ
 if __name__ == "__main__":
-    print("SPECTRE_SMS_BOT (With DB & Professional Panel) is running smoothly...")
+    print("SPECTRE_FACEBOOK_SMS_BOT is running smoothly...")
     bot.infinity_polling()
