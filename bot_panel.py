@@ -1,5 +1,7 @@
 import telebot
 from telebot import types
+import sqlite3
+import requests
 
 # 🔑 আপনার মেইন বটের টোকেন এখানে বসান
 TOKEN = "9150625768:AAEacN3GgqQQ1XG1oAZ7D_aFF6503Kob_ug"
@@ -9,7 +11,41 @@ bot = telebot.TeleBot(TOKEN)
 OTP_CHANNEL_ID = 1004381508455 
 ADMIN_CONTACT = "@sakib43900"
 
-# 🌐 ডাটাবেজ (নম্বর ও ট্রাফিক ম্যানেজমেন্ট)
+# 🗄️ ডাটাবেজ ইনিশিয়ালাইজেশন (SQLite)
+def init_db():
+    conn = sqlite3.connect('spectre_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            full_name TEXT,
+            balance REAL DEFAULT 0.0,
+            total_otps INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# হেল্পার ফাংশন: ইউজার ডাটা চেক বা তৈরি করা
+def get_or_create_user(user_id, full_name):
+    conn = sqlite3.connect('spectre_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT balance, total_otps FROM users WHERE user_id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        cursor.execute('INSERT INTO users (user_id, full_name, balance, total_otps) VALUES (?, ?, ?, ?)', (user_id, full_name, 0.0, 0))
+        conn.commit()
+        balance, total_otps = 0.0, 0
+    else:
+        balance, total_otps = user
+        
+    conn.close()
+    return balance, total_otps
+
+# 🌐 ডামি বা এপিআই বেজড ডাটা (এখানে জেনেক্স এপিআই কল যুক্ত করা যাবে)
 DATABASE = {
     "italy_v7": {
         "country_name": "🇮🇹 Italy V7",
@@ -28,7 +64,8 @@ DATABASE = {
 # 🚀 /start কমান্ড হ্যান্ডলার
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    user_name = message.from_user.first_name
+    user = message.from_user
+    get_or_create_user(user.id, user.first_name)
     
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
@@ -36,6 +73,7 @@ def send_welcome(message):
         types.KeyboardButton("📊 LIVE TRAFFIC"),
         types.KeyboardButton("👤 STATUS"),
         types.KeyboardButton("💰 BALANCE"),
+        types.KeyboardButton("💳 WITHDRAW (Min 50৳)"),
         types.KeyboardButton("🏆 TODAY TOP"),
         types.KeyboardButton("💬 SUPPORT")
     )
@@ -43,7 +81,7 @@ def send_welcome(message):
     welcome_text = (
         f"⚡ **WELCOME TO SPECTRE SMS PANEL** ⚡\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👋 Hello, **{user_name}**!\n\n"
+        f"👋 Hello, **{user.first_name}**!\n\n"
         f"🚀 Welcome to your ultimate virtual OTP solution. Get your instant numbers and OTPs safely and securely.\n\n"
         f"👇 Select an option from the control panel below to begin:"
     )
@@ -54,6 +92,8 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: True)
 def handle_menu(message):
     text = message.text
+    user = message.from_user
+    balance, total_otps = get_or_create_user(user.id, user.first_name)
     
     if text == "📱 GET NUMBER":
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -70,7 +110,6 @@ def handle_menu(message):
         bot.send_message(message.chat.id, traffic_msg, parse_mode="Markdown")
         
     elif text == "👤 STATUS":
-        user = message.from_user
         status_msg = (
             f"👤 **USER ACCOUNT STATUS**\n\n"
             f"• Full Name: {user.first_name}\n"
@@ -82,12 +121,29 @@ def handle_menu(message):
         
     elif text == "💰 BALANCE":
         balance_msg = (
-            "💰 **WALLET & BALANCE**\n\n"
-            "• Current Balance: `$0.00 USD`\n"
-            "• Total Used: `0 OTPs`\n\n"
-            "💳 *To add balance or top-up, contact administration.*"
+            f"💰 **WALLET & BALANCE**\n\n"
+            f"• Current Balance: `{balance} BDT`\n"
+            f"• Total Used: `{total_otps} OTPs`\n\n"
+            f"💳 *To add balance or top-up, contact administration.*"
         )
         bot.send_message(message.chat.id, balance_msg, parse_mode="Markdown")
+        
+    elif text == "💳 WITHDRAW (Min 50৳)":
+        if balance >= 50:
+            withdraw_msg = (
+                f"✅ **WITHDRAWAL REQUEST INITIATED**\n\n"
+                f"• Available Balance: `{balance} BDT`\n"
+                f"• Minimum Limit: `50 BDT`\n\n"
+                f"📌 *Please contact admin {ADMIN_CONTACT} with your Telegram ID (`{user.id}`) to cash out instantly.*"
+            )
+        else:
+            withdraw_msg = (
+                f"⚠️ **INSUFFICIENT BALANCE**\n\n"
+                f"• Current Balance: `{balance} BDT`\n"
+                f"• Required Minimum: `50 BDT`\n\n"
+                f"❌ *Your balance is below 50 BDT. Earn or top-up more to withdraw.*"
+            )
+        bot.send_message(message.chat.id, withdraw_msg, parse_mode="Markdown")
         
     elif text == "🏆 TODAY TOP":
         top_msg = "🏆 **TODAY'S TOP PERFORMING SERVICES** 🏆\n\n"
@@ -112,7 +168,7 @@ def handle_menu(message):
     else:
         bot.send_message(message.chat.id, "⚠️ Please use the official control panel buttons below.")
 
-# 📱 ইনলাইন বাটন হ্যান্ডলার ও ওটিপি ফরওয়ার্ডিং সিস্টেম
+# 📱 ইনলাইন বাটন হ্যান্ডলার ও ওটিপি ফরওয়ার্ডিং সিস্টেম
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     if call.data.startswith("country_"):
@@ -124,9 +180,8 @@ def callback_handler(call):
             
             bot.answer_callback_query(call.id, f"Assigned from {c_data['country_name']}!")
             
-            # ইউজারের চ্যাটে নম্বর চলে যাবে
             response_msg = (
-                f"⏳ **WAITING FOR OTP...** 🇫🇷\n\n"
+                f"⏳ **WAITING FOR OTP...**\n\n"
                 f"🌍 **Service:** {c_data['country_name']}\n"
                 f"📱 **Assigned Number:** `{assigned_number}`\n\n"
                 f"📌 *Status:* Ready to receive incoming messages. OTP codes will appear here automatically."
@@ -137,9 +192,6 @@ def callback_handler(call):
             markup.add(types.InlineKeyboardButton("🔙 Back to Country List", callback_data="back_menu"))
             
             bot.edit_message_text(response_msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-            
-            # 🔄 [অটোমেটিক ওটিপি ট্রান্সফার ফাংশন] 
-            # যখনই কেউ নম্বর নিবে, ব্যাকগ্রাউন্ডে ওটিপি চ্যানেলে নোটিফিকেশন চলে যাবে যে এই নাম্বারে ওটিপির জন্য অপেক্ষা করা হচ্ছে
             trigger_otp_listener(assigned_number, c_data['country_name'], user_id)
             
     elif call.data == "back_menu":
@@ -149,9 +201,6 @@ def callback_handler(call):
         bot.edit_message_text("🌐 **CHOOSE YOUR TARGET COUNTRY:**", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
 def trigger_otp_listener(phone, service, user_id):
-    """
-    এই ফাংশনটি প্যানেল বা এপিআই থেকে আসা ওটিপি রিসিভ করে সরাসরি আপনার নির্ধারিত ওটিপি গ্রুপ বা চ্যানেলে ট্রান্সফার করবে।
-    """
     log_text = (
         f"🔔 **NEW NUMBER ASSIGNED & LISTENING**\n\n"
         f"📱 **Number:** `{phone}`\n"
@@ -160,12 +209,11 @@ def trigger_otp_listener(phone, service, user_id):
         f"⏳ *Waiting for incoming SMS/OTP from gateway...*"
     )
     try:
-        # ওটিপি চ্যানেল বা গ্রুপে মেসেজ পাঠিয়ে দিবে
         bot.send_message(OTP_CHANNEL_ID, log_text, parse_mode="Markdown")
     except Exception as e:
         print(f"OTP Forwarding Error: {e}")
 
 # বট রান করার লুপ
 if __name__ == "__main__":
-    print("SPECTRE_SMS_BOT (Combined with Auto OTP Logger) is running smoothly...")
+    print("SPECTRE_SMS_BOT (With DB & Professional Panel) is running smoothly...")
     bot.infinity_polling()
