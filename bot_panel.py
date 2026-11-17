@@ -62,7 +62,7 @@ def increment_user_otp(user_id):
 def fetch_number_from_genex(service_code):
     try:
         headers = {
-            "mapikey": GENEX_API_KEY,[cite: 1]
+            "mapikey":ZENEX_API_KEY,
             "Content-Type": "application/json"
         }
         payload = {
