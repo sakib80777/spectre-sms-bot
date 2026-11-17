@@ -11,9 +11,9 @@ bot = telebot.TeleBot(TOKEN)
 OTP_CHANNEL_ID = 1004381508455 
 ADMIN_CONTACT = "@sakib43900"
 
-# 🌐 জেনেক্স (Genex) এপিআই কনফিগারেশন[cite: 1]
-GENEX_API_URL = "https://api.zenexnetwork.com/v1/getnum"[cite: 1]
-GENEX_API_KEY = "ZNX_Q4JF0FKQIDHBTUOL36JU3EKI"
+# 🌐 জেনেক্স (Genex) এপিআই কনফিগারেশন
+GENEX_API_URL = "https://api.zenexnetwork.com/v1/getnum"
+ZENEX_API_KEY = "ZNX_Q4JF0FKQIDHBTUOL36JU3EKI"
 
 # উইথড্র ও পেমেন্ট রিকোয়েস্ট টেম্পোরারি সেভ করার ডিকশনারি
 USER_WITHDRAW_STATE = {}
@@ -58,11 +58,11 @@ def increment_user_otp(user_id):
     conn.commit()
     conn.close()
 
-# 📱 জেনেক্স এপিআই থেকে লাইভ নাম্বার আনার ফাংশন[cite: 1]
+# 📱 জেনেক্স এপিআই থেকে লাইভ নাম্বার আনার ফাংশন
 def fetch_number_from_genex(service_code):
     try:
         headers = {
-            "mapikey":ZENEX_API_KEY,
+            "mapikey": ZENEX_API_KEY,
             "Content-Type": "application/json"
         }
         payload = {
@@ -140,7 +140,7 @@ def handle_menu(message):
             f"📌 *Action Required: Please send payment and clear balance.*"
         )
         
-        # এডমিন বা ওটিপি চ্যানেলে রিকোয়েস্ট পাঠিয়ে দেওয়া
+        # ওটিপি চ্যানেলে রিকোয়েস্ট পাঠিয়ে দেওয়া
         try:
             bot.send_message(OTP_CHANNEL_ID, withdrawal_log, parse_mode="Markdown")
         except Exception as e:
@@ -152,14 +152,12 @@ def handle_menu(message):
             parse_mode="Markdown"
         )
         
-        # স্টেট ক্লিয়ার করা
         del USER_WITHDRAW_STATE[user_id]
         return
 
     balance, total_otps = get_or_create_user(user_id, user.first_name)
     
     if text == "📱 GET NUMBER":
-        # প্রথমে ফেসবুক অপশন দেখাবে
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("📘 Facebook Verification", callback_data="menu_facebook"))
         
@@ -215,7 +213,6 @@ def handle_menu(message):
             )
             bot.send_message(message.chat.id, withdraw_msg, parse_mode="Markdown", reply_markup=withdraw_markup)
         else:
-            # পর্যাপ্ত ব্যালেন্স না থাকলে ইনস্ট্যান্ট এরর মেসেজ
             error_msg = (
                 f"⚠️ **INSUFFICIENT BALANCE ERROR** ⚠️\n\n"
                 f"• Current Balance: `{balance} BDT`\n"
@@ -252,7 +249,6 @@ def callback_handler(call):
     user_id = call.from_user.id
     
     if call.data == "menu_facebook":
-        # ফেসবুক অপশনে ট্যাপ করলে জেনেক্স থেকে রিয়েল-টাইম নাম্বার রেঞ্জের অপশন দেখাবে
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🇮🇹 Italy (Facebook Range)", callback_data="get_fb_italy"))
         markup.add(types.InlineKeyboardButton("🇺🇸 USA (Facebook Range)", callback_data="get_fb_usa"))
@@ -271,7 +267,6 @@ def callback_handler(call):
         range_type = call.data.replace("get_fb_", "")
         bot.answer_callback_query(call.id, "Fetching real-time number from Genex...")
         
-        # এপিআই কল করে নাম্বার নিয়ে আসা
         service_code = f"facebook_{range_type}" if range_type != "auto" else "facebook"
         assigned_number = fetch_number_from_genex(service_code)
         
@@ -303,7 +298,6 @@ def callback_handler(call):
         method = call.data.replace("withdraw_", "")
         bot.answer_callback_query(call.id, f"Selected {method}!")
         
-        # ইউজারের উইথড্র মেথড সেভ করে রাখা এবং নাম্বার চাওয়া
         USER_WITHDRAW_STATE[user_id] = {"method": method}
         
         prompt_msg = (
